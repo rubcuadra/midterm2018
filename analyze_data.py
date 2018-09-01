@@ -50,16 +50,58 @@ def getSpikes(sDF):
 
 def getSpikesText(sDF, spikesDF, amountOfSpikes=10):
     fixedSpikes = spikesDF.sort( desc("totalPostsInTheDay") ).limit(amountOfSpikes)
-    return sDF.select( sDF.id, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
+    return sDF.select( sDF.id, sDF.subreddit, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
               .join(fixedSpikes, "day" , "right")\
               .sort( desc("day") )\
-              .select("day", "title", "id", "totalPostsInTheDay")
+              .select("day", "title", "id", "totalPostsInTheDay", "subreddit")
+
+from requests import get
+from time import sleep
+headers = {'User-Agent': 'Mozilla/5.0'}
+def getPostBody(row):
+    #sort=controversial
+    url = f"http://reddit.com/r/{row.subreddit}/comments/{row.id}.json?sort=confidence"
+    _comments = []
+    tries = 5
+    while tries>0:
+        r = get(url, headers=headers)
+        if r.status_code == 200:
+            responseJson  = r.json()
+
+            post = responseJson[0]["data"]["children"][0]["data"]
+            comments = responseJson[1]["data"]["children"]
+
+            for comment in comments:
+                comment = comment["data"]       
+
+                _comments.append([
+                    comment["id"],
+                    comment["score"].
+                    comment["ups"],
+                    comment["body"],
+                    comment["author"],
+                    datetime.utcfromtimestamp( comment["created_utc"] ).isoformat(' ')
+                ])
+        else:
+            sleep(1)
+            print("ERROR")
+        tries-=1
+    return tuple( r for r in row) + tuple(_comments)
+
+
 
 subreddits = ["The_Donald","politics"]
 for subreddit in subreddits:
-    df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
+    # df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
+
     # getSpikes(df).repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
     # getAuthorsStats(df).repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
     # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
+    # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
+    # For each row in spikesTextDF: row_with_comments = getPostBody(row)
+
     # getSpikesText(df,spikesDF).repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
+    pass
+
+
     
