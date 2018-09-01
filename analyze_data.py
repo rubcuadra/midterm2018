@@ -48,12 +48,16 @@ def getSpikes(sDF):
             .sort( desc("totalPostsInTheDay") )\
             .selectExpr("*")
 
-def getSpikesText(sDF, spikesDF, amountOfSpikes=10):
+def getSpikesText(sDF, spikesDF, amountOfSpikes=15):
     fixedSpikes = spikesDF.sort( desc("totalPostsInTheDay") ).limit(amountOfSpikes)
     return sDF.select( sDF.id, sDF.subreddit, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
               .join(fixedSpikes, "day" , "right")\
               .sort( desc("day") )\
-              .select("day", "title", "id", "totalPostsInTheDay", "subreddit")
+              .select(  "day", 
+                        translate("title", ",", " ").alias("title"),
+                        "id", 
+                        "totalPostsInTheDay", 
+                        "subreddit")
 
 from requests import get
 from time import sleep
@@ -92,16 +96,21 @@ def getPostBody(row):
 
 subreddits = ["The_Donald","politics"]
 for subreddit in subreddits:
-    # df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
-
-    # getSpikes(df).repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
-    # getAuthorsStats(df).repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
+    #Read Data
+    df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
     # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
     # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
+    # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
+    #Generate
+    spikesDF = getSpikes(df)
+    authorsDF = getAuthorsStats(df)
+    spikesTextDF = getSpikesText(df,spikesDF)
+    #Save
+    spikesDF.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
+    authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
+    spikesTextDF.repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
     # For each row in spikesTextDF: row_with_comments = getPostBody(row)
-
-    # getSpikesText(df,spikesDF).repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
-    pass
+    
 
 
     
