@@ -15,7 +15,7 @@ class types(Enum):
 
 #Inputs
 dumpType = types.CSV
-subreddits = ["ElectionPolls","politics","news","The_Donald","truenews","PoliticalHumor","shittypolitics","shittynews","Voting","democrats","Ask_Politics","all"]
+subreddits = ["politics","news","The_Donald","truenews","PoliticalHumor","democrats","all"] #"ElectionPolls", "Ask_Politics"
 keyWords   = ["latino", "hispanic", "misinformation", "midterm"] 
 oldest_post_date = "28/08/2017"  #dd/mm/yyyy
 
