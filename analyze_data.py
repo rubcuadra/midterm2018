@@ -1,3 +1,4 @@
+mhash = hash
 from pyspark.sql.functions import *
 from pyspark.sql.functions import UserDefinedFunction
 from pyspark.sql.types import *
@@ -9,6 +10,7 @@ from pyspark.ml.linalg import Vector as MLVector
 from pyspark.mllib.linalg import Vector, Vectors
 from pyspark.ml.feature import CountVectorizer
 import pandas as pd
+from datetime import datetime
 #Start spark
 from pyspark.sql import SparkSession
 spark = SparkSession.builder \
@@ -93,24 +95,81 @@ def getPostBody(row):
     return tuple( r for r in row) + tuple(_comments)
 
 
+def getKeywordsInDataRange(sDF,oldestTime,newestTime,topics=1,wordsPerTopic=20):  #yyyy-MM-dd
+    #Filter
+    oldestTime = datetime.strptime(oldestTime, '%Y-%m-%d')
+    newestTime = datetime.strptime(newestTime, '%Y-%m-%d')
+    filteredText = sDF\
+                    .select( "id", date_format('day','yyyy-MM-dd').alias('time'), col("title").alias("text") )\
+                    .where( (col("time") >= oldestTime) & (col("time") <= newestTime) ) 
+    
+    #StartPipeline for preparing data
+    textToWords = RegexTokenizer(inputCol="text", outputCol="splitted", pattern="[\\P{L}]+" ) #Remove signs and split by spaces
+    stopRemover = StopWordsRemover(inputCol="splitted", outputCol="words", stopWords=StopWordsRemover.loadDefaultStopWords("english"))
+    countVectorizer = CountVectorizer(inputCol="words", outputCol="features")
+    pipeline = Pipeline(stages=[textToWords, stopRemover, countVectorizer])
+
+    #GetCorups for LDA
+    model  = pipeline.fit(filteredText)
+    result = model.transform(filteredText)
+    corpus = result.select("id", "features").rdd.map(lambda r: [mhash(r.id)%10**8,Vectors.fromML(r.features)]).cache()
+
+    # Cluster the documents into k topics using LDA
+    ldaModel = LDA.train(corpus, k=topics,maxIterations=100,optimizer='online')
+    topics = ldaModel.topicsMatrix()
+    vocabArray = model.stages[2].vocabulary #CountVectorizer
+    topicIndices = spark.sparkContext.parallelize(ldaModel.describeTopics(maxTermsPerTopic = wordsPerTopic))
+
+    def topic_render(topic):  # specify vector id of words to actual words
+        terms = topic[0]
+        result = []
+        for i in range(wordsPerTopic):
+            term = vocabArray[terms[i]]
+            result.append(term)
+        return result
+
+    # topics_final = topicIndices.map(lambda topic: topic_render(topic)).collect()
+    # for topic in range(len(topics_final)):
+    #     print ("Topic" + str(topic) + ":")
+    #     for term in topics_final[topic]:
+    #         print (term)
+    #     print ('\n')
+    return topicIndices.map(lambda topic: topic_render(topic)).collect()
 
 subreddits = ["The_Donald","politics"]
+detectedSpikes = {
+    "The_Donald":[
+        ("2018-08-23","2018-08-25"),
+        ("2018-07-28","2018-07-31"),
+        ("2018-06-23","2018-08-27"),
+    ]
+}
+
 for subreddit in subreddits:
+    subredditDetectedSpikes = detectedSpikes[subreddit] if subreddit in detectedSpikes else []
     #Read Data
     df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
     # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
-    # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
+    spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
     # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
     #Generate
-    spikesDF = getSpikes(df)
-    authorsDF = getAuthorsStats(df)
-    spikesTextDF = getSpikesText(df,spikesDF)
+    # spikesDF = getSpikes(df)
+    # authorsDF = getAuthorsStats(df)
+    # spikesTextDF = getSpikesText(df,spikesDF)
     #Save
-    spikesDF.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
-    authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
-    spikesTextDF.repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
+    # spikesDF.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
+    # authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
+    # spikesTextDF.repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
     # For each row in spikesTextDF: row_with_comments = getPostBody(row)
+    # spikesTextDF.show()
     
-
-
+    #Las fechas salen de la tabla spikes, esta ordenada por posts en ese dia 
+    for sp in subredditDetectedSpikes:
+        print(f"SPIKE {sp[0]} : {sp[1]}")
+        #Automatizar
+        topics = getKeywordsInDataRange( spikesTextDF ,sp[0] ,sp[1], topics=3,wordsPerTopic=20)
+        for i,topic in enumerate(topics):
+            print(f"\tTopic {i}")
+            for keyword in topic:
+                print(f"\t\t{keyword}")
     
