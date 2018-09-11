@@ -55,8 +55,8 @@ def getDaysOrderedByAmountOfPosts(sDF):
             .selectExpr("*")
 
 #daysOrdered comes from getDaysOrderedByAmountOfPosts
-def getDaysText(sDF, daysOrderedDF, amountOfSpikes=15):
-    fixedSpikes = daysOrderedDF.sort( desc("totalPostsInTheDay") ).limit(amountOfSpikes)
+def getDaysText(sDF, daysOrderedDF):
+    fixedSpikes = daysOrderedDF.sort( desc("totalPostsInTheDay") )#.limit(15)
     return sDF.select( sDF.selftext, sDF.url, sDF.score, sDF.num_comments, sDF.id, sDF.subreddit, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
               .join(fixedSpikes, "day" , "right")\
               .sort( desc("day") )\
@@ -159,11 +159,16 @@ subreddits = ["The_Donald","politics"]
 
 detectedSpikes = {
     "The_Donald":[
+        ("2018-08-23","2018-08-25"),  #Attacks to O Rourke and midterm meeting with tech giants
         ("2018-07-06","2018-07-08"),  #Hispanic-Latino Unemployment Rate Hits Lowest Level on Record in June. Latinos for Trump 2020 Memes
-        ("2018-08-03","2018-08-04"), 
-        ("2018-08-13","2018-08-14"), 
-        ("2018-06-19","2018-06-20"),
-    ]
+        ("2018-08-03","2018-08-04"),  #Hispanic-Latino Unemployment Rate Hits Lowest Level on Record in July. Latinos for Trump 2020 Memes
+    ],
+    "politics":[
+        ('2018-01-22','2018-01-22'), #Trump election panel purchased Texas data identifying Hispanic voters: report
+        ('2018-06-20','2018-06-21'), #RNC chairwoman, Labor secretary pull out of annual Latino conference
+        ('2018-08-30'.'2018-08-30'), #Trump’s stripping of passports from some South Texas Latinos
+        ('2018-08-20'.'2018-08-20'), #Trump praises Hispanic border guard for speaking ‘perfect English’
+    ],
 }
 
 for subreddit in subreddits:
