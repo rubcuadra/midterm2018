@@ -10,6 +10,7 @@ from pyspark.ml.linalg import Vector as MLVector
 from pyspark.mllib.linalg import Vector, Vectors
 from pyspark.ml.feature import CountVectorizer
 import pandas as pd
+from pyspark.sql.utils import IllegalArgumentException
 from datetime import datetime
 #Start spark
 from pyspark.sql import SparkSession
@@ -18,6 +19,8 @@ spark = SparkSession.builder \
     .appName("SQLFinalTask") \
     .getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
+
+def convertTo(dataframe,colName,toType): return dataframe.withColumn(f'temp{colName}', col(colName).cast(toType)).drop(colName).withColumnRenamed(f'temp{colName}', colName)
 
 # author|   subreddit|    id|         title|               time|score|num_comments|   domain
 def getAuthorsStats(subredditDF):
@@ -34,7 +37,8 @@ def getAuthorsStats(subredditDF):
             .sort( desc("totalPosts"), desc("avgScore") )\
             .selectExpr("*")
 
-def getSpikes(sDF):
+#Days order by amount of posts
+def getDaysOrderedByAmountOfPosts(sDF):
     return sDF\
             .select( date_format('time','yyyy-MM-dd').alias('day'), sDF.score, sDF.num_comments  )\
             .groupBy( "day")\
@@ -50,58 +54,65 @@ def getSpikes(sDF):
             .sort( desc("totalPostsInTheDay") )\
             .selectExpr("*")
 
-def getSpikesText(sDF, spikesDF, amountOfSpikes=15):
-    fixedSpikes = spikesDF.sort( desc("totalPostsInTheDay") ).limit(amountOfSpikes)
-    return sDF.select( sDF.id, sDF.subreddit, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
+#daysOrdered comes from getDaysOrderedByAmountOfPosts
+def getDaysText(sDF, daysOrderedDF, amountOfSpikes=15):
+    fixedSpikes = daysOrderedDF.sort( desc("totalPostsInTheDay") ).limit(amountOfSpikes)
+    return sDF.select( sDF.selftext, sDF.url, sDF.score, sDF.num_comments, sDF.id, sDF.subreddit, sDF.title, date_format('time','yyyy-MM-dd').alias('day') )\
               .join(fixedSpikes, "day" , "right")\
               .sort( desc("day") )\
               .select(  "day", 
-                        translate("title", ",", " ").alias("title"),
+                        "title",#translate("title", ",", " ").alias("title"),
+                        "num_comments",
+                        "score",
                         "id", 
                         "totalPostsInTheDay", 
-                        "subreddit")
+                        "subreddit",
+                        'url',
+                        "selftext")
 
-from requests import get
-from time import sleep
-headers = {'User-Agent': 'Mozilla/5.0'}
-def getPostBody(row):
-    #sort=controversial
-    url = f"http://reddit.com/r/{row.subreddit}/comments/{row.id}.json?sort=confidence"
-    _comments = []
-    tries = 5
-    while tries>0:
-        r = get(url, headers=headers)
-        if r.status_code == 200:
-            responseJson  = r.json()
+# from requests import get
+# from time import sleep
+# headers = {'User-Agent': 'Mozilla/5.0'}
+# def getPostBody(row):
+#     #sort=controversial
+#     url = f"http://reddit.com/r/{row.subreddit}/comments/{row.id}.json?sort=confidence"
+#     _comments = []
+#     tries = 5
+#     while tries>0:
+#         r = get(url, headers=headers)
+#         if r.status_code == 200:
+#             responseJson  = r.json()
 
-            post = responseJson[0]["data"]["children"][0]["data"]
-            comments = responseJson[1]["data"]["children"]
+#             post = responseJson[0]["data"]["children"][0]["data"]
+#             comments = responseJson[1]["data"]["children"]
 
-            for comment in comments:
-                comment = comment["data"]       
+#             for comment in comments:
+#                 comment = comment["data"]       
 
-                _comments.append([
-                    comment["id"],
-                    comment["score"].
-                    comment["ups"],
-                    comment["body"],
-                    comment["author"],
-                    datetime.utcfromtimestamp( comment["created_utc"] ).isoformat(' ')
-                ])
-        else:
-            sleep(1)
-            print("ERROR")
-        tries-=1
-    return tuple( r for r in row) + tuple(_comments)
+#                 _comments.append([
+#                     comment["id"],
+#                     comment["score"].
+#                     comment["ups"],
+#                     comment["body"],
+#                     comment["author"],
+#                     datetime.utcfromtimestamp( comment["created_utc"] ).isoformat(' ')
+#                 ])
+#         else:
+#             sleep(1)
+#             print("ERROR")
+#         tries-=1
+#     return tuple( r for r in row) + tuple(_comments)
 
 
 def getKeywordsInDataRange(sDF,oldestTime,newestTime,topics=1,wordsPerTopic=20):  #yyyy-MM-dd
     #Filter
     oldestTime = datetime.strptime(oldestTime, '%Y-%m-%d')
     newestTime = datetime.strptime(newestTime, '%Y-%m-%d')
+    
     filteredText = sDF\
                     .select( "id", date_format('day','yyyy-MM-dd').alias('time'), col("title").alias("text") )\
                     .where( (col("time") >= oldestTime) & (col("time") <= newestTime) ) 
+
     
     #StartPipeline for preparing data
     textToWords = RegexTokenizer(inputCol="text", outputCol="splitted", pattern="[\\P{L}]+" ) #Remove signs and split by spaces
@@ -110,7 +121,8 @@ def getKeywordsInDataRange(sDF,oldestTime,newestTime,topics=1,wordsPerTopic=20):
     pipeline = Pipeline(stages=[textToWords, stopRemover, countVectorizer])
 
     #GetCorups for LDA
-    model  = pipeline.fit(filteredText)
+    try:                             model  = pipeline.fit(filteredText)
+    except IllegalArgumentException: return []
     result = model.transform(filteredText)
     corpus = result.select("id", "features").rdd.map(lambda r: [mhash(r.id)%10**8,Vectors.fromML(r.features)]).cache()
 
@@ -137,39 +149,53 @@ def getKeywordsInDataRange(sDF,oldestTime,newestTime,topics=1,wordsPerTopic=20):
     return topicIndices.map(lambda topic: topic_render(topic)).collect()
 
 subreddits = ["The_Donald","politics"]
+# detectedSpikes = {
+#     "The_Donald":[
+#         ("2018-08-23","2018-08-25"), #Attacks to O Rourke and midterm meeting with tech giants
+#         ("2018-07-28","2018-07-31"), #facebook, ice, insults, phonebank, lead, deporting, mueller, unpaid, senate, procedure, paid
+#         ("2018-06-23","2018-08-27"), #white, facebook, meddling, fire, obama, rate, CORTEZ, zuckerberg
+#     ]
+# }
+
 detectedSpikes = {
     "The_Donald":[
-        ("2018-08-23","2018-08-25"),
-        ("2018-07-28","2018-07-31"),
-        ("2018-06-23","2018-08-27"),
+        ("2018-07-06","2018-07-08"),  #Hispanic-Latino Unemployment Rate Hits Lowest Level on Record in June. Latinos for Trump 2020 Memes
+        ("2018-08-03","2018-08-04"), 
+        ("2018-08-13","2018-08-14"), 
+        ("2018-06-19","2018-06-20"),
     ]
 }
 
 for subreddit in subreddits:
     subredditDetectedSpikes = detectedSpikes[subreddit] if subreddit in detectedSpikes else []
     #Read Data
-    df = spark.createDataFrame( pd.read_csv(f"{subreddit}/_{subreddit}.csv") ) 
-    # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
-    spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
-    # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
-    #Generate
-    # spikesDF = getSpikes(df)
-    # authorsDF = getAuthorsStats(df)
-    # spikesTextDF = getSpikesText(df,spikesDF)
-    #Save
-    # spikesDF.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)        #Create file for picos
+    df = spark.read.csv(f'{subreddit}/{subreddit}.csv', header=True)
+    df = convertTo(df,"score",IntegerType())
+    df = convertTo(df,"num_comments",IntegerType())
+    
+    # # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
+    # # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
+    # # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
+    # #Generate
+    # daysOrderedDF = getDaysOrderedByAmountOfPosts(df)
+    # daysOrderedDF.show()
+    # # authorsDF = getAuthorsStats(df)
+    # spikestextdf = getDaysText(df,daysOrderedDF)
+    # spikestextdf.show()
+    # spikestextdf.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)  
+    spikestextdf = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
     # authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
-    # spikesTextDF.repartition(1).write.csv(f'{subreddit}/spikesText_{subreddit}.csv',header=True)
+    # spikestextdf.repartition(1).write.csv(f'{subreddit}/daysText_{subreddit}.csv',header=True)
     # For each row in spikesTextDF: row_with_comments = getPostBody(row)
     # spikesTextDF.show()
     
-    #Las fechas salen de la tabla spikes, esta ordenada por posts en ese dia 
     for sp in subredditDetectedSpikes:
         print(f"SPIKE {sp[0]} : {sp[1]}")
         #Automatizar
-        topics = getKeywordsInDataRange( spikesTextDF ,sp[0] ,sp[1], topics=3,wordsPerTopic=20)
+        topics = getKeywordsInDataRange( spikestextdf ,sp[0] ,sp[1], topics=3,wordsPerTopic=8)
         for i,topic in enumerate(topics):
             print(f"\tTopic {i}")
             for keyword in topic:
                 print(f"\t\t{keyword}")
-    
+
+

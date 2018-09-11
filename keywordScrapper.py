@@ -1,23 +1,19 @@
-import csv
+from os import path, makedirs, cpu_count, environ
+environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
 from itertools import product
 from requests import get
 from time import sleep
 from json import dump
-from os import path, makedirs, cpu_count
 from datetime import datetime
 from multiprocessing import Pool
 from enum import Enum
+import shutil
 import pandas as pd
+import csv
 
 class types(Enum):
     JSON = "J"
     CSV  = "C"
-
-#Inputs
-dumpType = types.CSV
-subreddits = ["politics","news","The_Donald","truenews","PoliticalHumor","democrats","all"] #"ElectionPolls", "Ask_Politics"
-keyWords   = ["latino", "hispanic", "misinformation", "midterm"] 
-oldest_post_date = "28/08/2017"  #dd/mm/yyyy
 
 def isPostValid(post):
     #example: if "something" in post["title"] ...
@@ -60,7 +56,7 @@ def dumpSubredditPosts(payload):
                         with open(f'{dumpFolder}/{fp["id"]}.json', 'w+') as o:dump(fp, o) #output file
                     elif dumpType == types.CSV:
                         timeInIso = datetime.utcfromtimestamp( post["data"]["created_utc"] ).isoformat(' ')
-                        post_line = [post["data"]["author"],post["data"]["subreddit_name_prefixed"],post["data"]["id"],post["data"]["title"], timeInIso, post["data"]["score"], post["data"]["num_comments"], post["data"]["domain"]]
+                        post_line = [post["data"]["author"],post["data"]["subreddit_name_prefixed"],post["data"]["id"],post["data"]["title"].replace(","," "), timeInIso, post["data"]["score"], post["data"]["num_comments"], post["data"]["domain"], post["data"]["url"], '.' if post["data"]["selftext"] in ['',' ',None] else post["data"]["selftext"].replace(',',' ').replace('\n',' ')]
                         with open(f"{dumpFolder}/{subreddit}.csv", 'a') as f:
                             csv.writer(f).writerow(post_line)
                     last_post_date = datetime.utcfromtimestamp( post["data"]["created_utc"] )  #Update date
@@ -74,7 +70,8 @@ def dumpSubredditPosts(payload):
             sleep(1)
     print(subreddit,"DONE")
 
-if __name__ == '__main__':
+def run(subreddits,keyWords,oldest_post_date,dumpType=types.CSV):
+    #Inputs
     pool = Pool(cpu_count()) #Parallelize crawlers
     pool.map(dumpSubredditPosts, tuple( product(subreddits, keyWords) ) ) 
     pool.close()
@@ -82,8 +79,18 @@ if __name__ == '__main__':
 
     #Dedupe
     for s in subreddits:
-        try:    records = pd.read_csv(f'{s}/{s}.csv', names = ["author","subreddit", "id", "title", "time","score","num_comments","domain"])
+        try:    records = pd.read_csv(f'{s}/{s}.csv', names = ["author","subreddit", "id", "title", "time","score","num_comments","domain","url","selftext"])
         except: continue
         deduped = records.drop_duplicates(["id"])
-        deduped.to_csv(f'{s}/_{s}.csv', index=False)
+        deduped.to_csv(f'{s}/temp_{s}.csv', index=False)
+        shutil.move(f'{s}/temp_{s}.csv', f'{s}/{s}.csv')
+
         
+
+if __name__ == '__main__':
+    dumpType = types.CSV
+    subreddits = ["politics","news","The_Donald","truenews","PoliticalHumor","democrats","all"] #"ElectionPolls", "Ask_Politics"
+    keyWords   = ["latino", "hispanic"] #"misinformation", "midterm" 
+    oldest_post_date = "10/09/2017"  #dd/mm/yyyy
+    run(subreddits,keyWords,oldest_post_date,dumpType)
+    
