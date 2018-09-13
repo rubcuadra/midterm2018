@@ -149,13 +149,6 @@ def getKeywordsInDataRange(sDF,oldestTime,newestTime,topics=1,wordsPerTopic=20):
     return topicIndices.map(lambda topic: topic_render(topic)).collect()
 
 subreddits = ["The_Donald","politics"]
-# detectedSpikes = {
-#     "The_Donald":[
-#         ("2018-08-23","2018-08-25"), #Attacks to O Rourke and midterm meeting with tech giants
-#         ("2018-07-28","2018-07-31"), #facebook, ice, insults, phonebank, lead, deporting, mueller, unpaid, senate, procedure, paid
-#         ("2018-06-23","2018-08-27"), #white, facebook, meddling, fire, obama, rate, CORTEZ, zuckerberg
-#     ]
-# }
 
 detectedSpikes = {
     "The_Donald":[
@@ -166,8 +159,8 @@ detectedSpikes = {
     "politics":[
         ('2018-01-22','2018-01-22'), #Trump election panel purchased Texas data identifying Hispanic voters: report
         ('2018-06-20','2018-06-21'), #RNC chairwoman, Labor secretary pull out of annual Latino conference
-        ('2018-08-30'.'2018-08-30'), #Trump’s stripping of passports from some South Texas Latinos
-        ('2018-08-20'.'2018-08-20'), #Trump praises Hispanic border guard for speaking ‘perfect English’
+        ('2018-08-30','2018-08-30'), #Trump’s administration stripping of passports from some South Texas Latinos
+        ('2018-08-20','2018-08-20'), #Trump praises Hispanic border guard for speaking ‘perfect English’
     ],
 }
 
@@ -178,29 +171,29 @@ for subreddit in subreddits:
     df = convertTo(df,"score",IntegerType())
     df = convertTo(df,"num_comments",IntegerType())
     
-    # # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
-    # # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
-    # # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
-    # #Generate
+    # spikesDF = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
+    # spikesTextDF = spark.read.csv(f'{subreddit}/spikesText_{subreddit}.csv', header=True)
+    # authorsDF = spark.read.csv(f'{subreddit}/authors_{subreddit}.csv', header=True)
+    #Generate
     # daysOrderedDF = getDaysOrderedByAmountOfPosts(df)
     # daysOrderedDF.show()
-    # # authorsDF = getAuthorsStats(df)
+    authorsDF = getAuthorsStats(df)
     # spikestextdf = getDaysText(df,daysOrderedDF)
     # spikestextdf.show()
     # spikestextdf.repartition(1).write.csv(f'{subreddit}/spikes_{subreddit}.csv',header=True)  
-    spikestextdf = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
-    # authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
+    # spikestextdf = spark.read.csv(f'{subreddit}/spikes_{subreddit}.csv', header=True)
+    authorsDF.repartition(1).write.csv(f'{subreddit}/authors_{subreddit}.csv',header=True) #Create file for authorsData
     # spikestextdf.repartition(1).write.csv(f'{subreddit}/daysText_{subreddit}.csv',header=True)
     # For each row in spikesTextDF: row_with_comments = getPostBody(row)
     # spikesTextDF.show()
     
-    for sp in subredditDetectedSpikes:
-        print(f"SPIKE {sp[0]} : {sp[1]}")
-        #Automatizar
-        topics = getKeywordsInDataRange( spikestextdf ,sp[0] ,sp[1], topics=3,wordsPerTopic=8)
-        for i,topic in enumerate(topics):
-            print(f"\tTopic {i}")
-            for keyword in topic:
-                print(f"\t\t{keyword}")
+    # for sp in subredditDetectedSpikes:
+    #     print(f"SPIKE {sp[0]} : {sp[1]}")
+    #     #Automatizar
+    #     topics = getKeywordsInDataRange( spikestextdf ,sp[0] ,sp[1], topics=3,wordsPerTopic=8)
+    #     for i,topic in enumerate(topics):
+    #         print(f"\tTopic {i}")
+    #         for keyword in topic:
+    #             print(f"\t\t{keyword}")
 
 
