@@ -1,14 +1,15 @@
-from os import path, makedirs, cpu_count, environ
+from os import path, makedirs, cpu_count, environ, remove
 environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
+from multiprocessing import Pool
+from regex import compile, match
 from itertools import product
+from datetime import datetime
 from requests import get
 from time import sleep
 from json import dump
-from datetime import datetime
-from multiprocessing import Pool
 from enum import Enum
-import shutil
 import pandas as pd
+import shutil
 import csv
 
 class types(Enum):
@@ -70,7 +71,7 @@ def dumpSubredditPosts(payload):
             sleep(1)
     print(subreddit,"DONE")
 
-def run(subreddits,keyWords,oldest_post_date,dumpType=types.CSV):
+def run(subreddits,keyWords,oldest_post_date,dumpType=types.CSV, filter_text=False):
     #Inputs
     pool = Pool(cpu_count()) #Parallelize crawlers
     pool.map(dumpSubredditPosts, tuple( product(subreddits, keyWords) ) ) 
@@ -84,8 +85,22 @@ def run(subreddits,keyWords,oldest_post_date,dumpType=types.CSV):
         deduped = records.drop_duplicates(["id"])
         deduped.to_csv(f'{s}/temp_{s}.csv', index=False)
         shutil.move(f'{s}/temp_{s}.csv', f'{s}/{s}.csv')
-
-        
+    
+    if filter_text: #Filter only if it has the Keyword in the title or selftext
+        r = compile(f"^.*({'|'.join([k for k in keyWords])})+.*$") #Compile regex, faster
+        print(r)
+        for s in subreddits:
+            try: #case we do not have the csv
+                with open(f'{s}/{s}.csv',"r") as f,open(f'{s}/temp_{s}.csv',"w+") as t:
+                    reader = csv.DictReader(f)
+                    t.write(f"{','.join(reader.fieldnames)}\n") #Write headers
+                    for line in reader:
+                        if r.match(line["title"]) or r.match(line["selftext"]): #Match regex
+                            l = ",".join(line[fName] for fName in reader.fieldnames)
+                            t.write(f"{l}\n")
+                    shutil.move(f'{s}/temp_{s}.csv', f'{s}/{s}.csv')
+            except FileNotFoundError : 
+                continue
 
 if __name__ == '__main__':
     dumpType = types.CSV
