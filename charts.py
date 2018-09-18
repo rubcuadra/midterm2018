@@ -15,7 +15,8 @@ def run(subreddits):
         c = Counter()
         fName = f'{subreddit}/{subreddit}.csv'
         if not os.path.isfile(fName) : continue
-        records = pd.read_csv(fName, names = ["author","subreddit", "id", "title", "time","score","num_comments","domain","url",'selftext'])
+        print (subreddit)
+        records = pd.read_csv(fName, names = ["author","subreddit", "id", "title", "time","score","num_comments","domain","url",'selftext'],engine='python')
         #Count on same day
         for index, row in records.iterrows():
             if index==0: continue #Headers
@@ -61,5 +62,5 @@ def run(subreddits):
         plt.savefig(f'figs/{subreddit}.png')
         
 if __name__ == '__main__':
-    subreddits = ["politics","news","The_Donald","truenews","PoliticalHumor","democrats","all"] #"ElectionPolls", "Ask_Politics"
+    from config import subreddits
     run(subreddits)
