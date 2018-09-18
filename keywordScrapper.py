@@ -7,14 +7,10 @@ from datetime import datetime
 from requests import get
 from time import sleep
 from json import dump
-from enum import Enum
 import pandas as pd
 import shutil
 import csv
-
-class types(Enum):
-    JSON = "J"
-    CSV  = "C"
+from config import types
 
 def isPostValid(post):
     #example: if "something" in post["title"] ...
@@ -71,14 +67,9 @@ def dumpSubredditPosts(subreddit, keyword, oldest_post_date, dumpType):
             sleep(1)
     print(subreddit,"DONE")
 
-def run(subreddits,keyWords,opd,dumpType=types.CSV, filter_text=False):
+def run(pool,subreddits,keyWords,opd,dumpType=types.CSV, filter_text=False):
     #Inputs
     tp = tuple( product(subreddits, keyWords, [opd], [dumpType]) )
-    # c = cpu_count()
-    # for n,i in enumerate(tp) :
-    #     if n%c==0 :   
-    #         toUse = tp[n:n+c] 
-    pool = Pool(cpu_count()) #Parallelize crawlers
     pool.starmap(dumpSubredditPosts, tp ) 
     pool.close()
     pool.join()
@@ -93,24 +84,22 @@ def run(subreddits,keyWords,opd,dumpType=types.CSV, filter_text=False):
     
     if filter_text: #Filter only if it has the Keyword in the title or selftext
         r = compile(f"^.*({'|'.join([k for k in keyWords])})+.*$") #Compile regex, faster
-        print(r)
         for s in subreddits:
             try: #case we do not have the csv
-                with open(f'{s}/{s}.csv',"r") as f,open(f'{s}/temp_{s}.csv',"w+") as t:
+                with open(f'{s}/{s}.csv',"r") as f,open(f'{s}/filtered_{s}.csv',"w+") as t:
                     reader = csv.DictReader(f)
                     t.write(f"{','.join(reader.fieldnames)}\n") #Write headers
                     for line in reader:
                         if r.match(line["title"]) or r.match(line["selftext"]): #Match regex
                             l = ",".join(line[fName] for fName in reader.fieldnames)
                             t.write(f"{l}\n")
-                    shutil.move(f'{s}/temp_{s}.csv', f'{s}/{s}.csv')
+                    # shutil.move(f'{s}/temp_{s}.csv', f'{s}/{s}.csv')
             except FileNotFoundError : 
                 continue
 
 if __name__ == '__main__':
+    from config import subreddits,keyWords,oldest_post_date,dumpType
+    pool = Pool(cpu_count()) #Parallelize crawlers
     dumpType = types.CSV
-    subreddits = ["politics","news","The_Donald","truenews","PoliticalHumor","democrats","all"] #"ElectionPolls", "Ask_Politics"
-    keyWords   = ["latino", "hispanic"] #"misinformation", "midterm" 
-    oldest_post_date = "10/09/2017"  #dd/mm/yyyy
-    run(subreddits,keyWords,oldest_post_date,dumpType)
+    run(pool, subreddits,keyWords,oldest_post_date,dumpType,filter_text=False)
     
