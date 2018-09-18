@@ -16,7 +16,8 @@ def run(subreddits):
         fName = f'{subreddit}/{subreddit}.csv'
         if not os.path.isfile(fName) : continue
         print (subreddit)
-        records = pd.read_csv(fName, names = ["author","subreddit", "id", "title", "time","score","num_comments","domain","url",'selftext'],engine='python')
+        # open('test.csv','rU'), encoding='utf-8', engine='c'
+        records = pd.read_csv(fName, names = ["author","subreddit", "id", "title", "time","score","num_comments","domain","url",'selftext'],engine='c')
         #Count on same day
         for index, row in records.iterrows():
             if index==0: continue #Headers
