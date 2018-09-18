@@ -11,6 +11,7 @@ from enum import Enum
 import pandas as pd
 import shutil
 import csv
+oldest_post_date = None
 
 class types(Enum):
     JSON = "J"
@@ -71,7 +72,9 @@ def dumpSubredditPosts(payload):
             sleep(1)
     print(subreddit,"DONE")
 
-def run(subreddits,keyWords,oldest_post_date,dumpType=types.CSV, filter_text=False):
+def run(subreddits,keyWords,opd,dumpType=types.CSV, filter_text=False):
+    global oldest_post_date 
+    oldest_post_date = opd
     #Inputs
     pool = Pool(cpu_count()) #Parallelize crawlers
     pool.map(dumpSubredditPosts, tuple( product(subreddits, keyWords) ) ) 
