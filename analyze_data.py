@@ -163,7 +163,7 @@ detectedSpikes = {
 }
 if __name__ == '__main__':
     from config import subreddits
-    
+    subreddits = ["republicans"]
     for subreddit in subreddits:
         subredditDetectedSpikes = detectedSpikes[subreddit] if subreddit in detectedSpikes else []
         #Read Data
